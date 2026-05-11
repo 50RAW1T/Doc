@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Doctor Appointment Tracker</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar" aria-label="Doctor appointment tracker">
+        <div>
+          <p class="eyebrow">Doctor Appointment Tracker</p>
+          <h1>ตารางนัดหมอ</h1>
+        </div>
+        <div class="sync-chip" id="syncStatus">เก็บในเครื่อง</div>
+      </section>
+
+      <section class="stats-grid" aria-label="Appointment summary">
+        <article class="stat">
+          <span>ทั้งหมด</span>
+          <strong id="totalCount">0</strong>
+        </article>
+        <article class="stat">
+          <span>รอนัด</span>
+          <strong id="pendingCount">0</strong>
+        </article>
+        <article class="stat">
+          <span>ใกล้ถึง</span>
+          <strong id="soonCount">0</strong>
+        </article>
+        <article class="stat">
+          <span>เสร็จแล้ว</span>
+          <strong id="doneCount">0</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <form class="panel form-panel" id="appointmentForm">
+          <div class="panel-header">
+            <h2 id="formTitle">เพิ่มนัดใหม่</h2>
+            <button class="icon-button subtle" type="button" id="clearFormBtn" title="ล้างฟอร์ม" aria-label="ล้างฟอร์ม">
+              <span aria-hidden="true">↺</span>
+            </button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              วันที่
+              <input id="dateInput" name="date" type="date" required />
+            </label>
+            <label>
+              เวลา
+              <input id="timeInput" name="time" type="time" />
+            </label>
+            <label>
+              สถานที่
+              <input id="placeInput" name="place" type="text" placeholder="โรงพยาบาล / คลินิก" />
+            </label>
+            <label>
+              แผนก
+              <input id="departmentInput" name="department" type="text" placeholder="เช่น ทันตกรรม" />
+            </label>
+            <label>
+              หมอ
+              <input id="doctorInput" name="doctor" type="text" placeholder="ชื่อแพทย์ ถ้ามี" />
+            </label>
+            <label>
+              สถานะ
+              <select id="statusInput" name="status">
+                <option value="pending">รอนัด</option>
+                <option value="done">ไปแล้ว</option>
+                <option value="rescheduled">เลื่อนนัด</option>
+                <option value="cancelled">ยกเลิก</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            รายละเอียด
+            <textarea id="noteInput" name="note" rows="4" placeholder="เช่น ตรวจฟัน ขูดหินปูน เตรียมเอกสาร"></textarea>
+          </label>
+
+          <div class="ocr-box">
+            <label for="ocrImageInput">อัปโหลดภาพใบนัด</label>
+            <input id="ocrImageInput" type="file" accept="image/*" />
+            <label for="ocrCropModeInput">บริเวณที่จะอ่าน</label>
+            <select id="ocrCropModeInput">
+              <option value="table">กรอบนัดเดี่ยว / ตารางนัด</option>
+              <option value="plan">ใบพบแพทย์ + รายการ Lab</option>
+              <option value="auto">อัตโนมัติ ตัดท้ายกระดาษ</option>
+              <option value="full">ทั้งภาพ</option>
+            </select>
+            <p class="date-hint">ถ้ารูปอ่านไม่ครบ ให้เปลี่ยนโหมดบริเวณที่จะอ่านแล้วอัปโหลดใหม่</p>
+            <div class="ocr-progress" id="ocrProgress" hidden>
+              <div class="progress-track"><span id="ocrProgressBar"></span></div>
+              <p id="ocrProgressText">กำลังอ่านภาพ...</p>
+            </div>
+            <label for="ocrText">ข้อความจากใบนัด</label>
+            <textarea id="ocrText" rows="5" placeholder="วางข้อความที่คัดลอกจากรูป/เอกสาร แล้วกดดึงข้อมูล"></textarea>
+            <label class="inline-check">
+              <input id="autoSaveOcrInput" type="checkbox" checked />
+              บันทึกอัตโนมัติหลังอ่านภาพ
+            </label>
+            <button class="secondary-button" type="button" id="parseOcrBtn">ดึงข้อมูลจากข้อความ</button>
+            <p class="date-hint" id="dateHint">เลือกวันที่แล้วระบบจะคำนวณจำนวนวันให้อัตโนมัติ</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary-button" type="submit" id="submitBtn">บันทึกนัด</button>
+            <button class="secondary-button" type="button" id="cancelEditBtn" hidden>ยกเลิกแก้ไข</button>
+          </div>
+        </form>
+
+        <section class="panel list-panel">
+          <div class="panel-header list-header">
+            <div>
+              <h2>รายการนัด</h2>
+              <p id="nextAppointment">ยังไม่มีนัดถัดไป</p>
+            </div>
+            <button class="icon-button" type="button" id="refreshBtn" title="รีเฟรชจาก Google Sheet" aria-label="รีเฟรชจาก Google Sheet">
+              <span aria-hidden="true">⟳</span>
+            </button>
+          </div>
+
+          <div class="toolbar">
+            <input id="searchInput" type="search" placeholder="ค้นหาโรงพยาบาล แผนก หมอ หรือรายละเอียด" />
+            <select id="filterInput" aria-label="กรองสถานะ">
+              <option value="all">ทุกสถานะ</option>
+              <option value="pending">รอนัด</option>
+              <option value="done">ไปแล้ว</option>
+              <option value="rescheduled">เลื่อนนัด</option>
+              <option value="cancelled">ยกเลิก</option>
+            </select>
+          </div>
+
+          <section class="calendar-panel" aria-label="ปฏิทินนัดหมาย">
+            <div class="calendar-header">
+              <button class="icon-button" type="button" id="prevMonthBtn" title="เดือนก่อน" aria-label="เดือนก่อน">
+                <span aria-hidden="true">‹</span>
+              </button>
+              <h3 id="calendarTitle">ปฏิทิน</h3>
+              <button class="icon-button" type="button" id="nextMonthBtn" title="เดือนถัดไป" aria-label="เดือนถัดไป">
+                <span aria-hidden="true">›</span>
+              </button>
+            </div>
+            <div class="calendar-weekdays" aria-hidden="true">
+              <span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span><span>อา</span>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+          </section>
+
+          <div class="appointment-list" id="appointmentList"></div>
+        </section>
+      </section>
+
+      <section class="panel settings-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Google Sheet Sync</h2>
+            <p>ใส่ Web App URL จาก Apps Script เพื่อซิงก์ข้อมูลข้ามเครื่อง</p>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <label>
+            Google Apps Script URL
+            <input id="scriptUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
+          </label>
+          <div class="settings-actions">
+            <button class="secondary-button" type="button" id="saveUrlBtn">บันทึก URL</button>
+            <button class="secondary-button" type="button" id="exportBtn">ส่งออก JSON</button>
+            <label class="file-button">
+              นำเข้า JSON
+              <input id="importInput" type="file" accept="application/json" />
+            </label>
+          </div>
+        </div>
+        <div class="dictionary-panel">
+          <div class="panel-header">
+            <div>
+              <h2>พจนานุกรมแก้ OCR</h2>
+              <p>ใส่คำผิดและคำที่ถูกต้อง ระบบจะใช้แก้ข้อความก่อนอ่านนัดครั้งถัดไป</p>
+            </div>
+          </div>
+          <div class="dictionary-form">
+            <input id="wrongWordInput" type="text" placeholder="คำที่ OCR อ่านผิด" />
+            <input id="correctWordInput" type="text" placeholder="คำที่ถูกต้อง" />
+            <button class="secondary-button" type="button" id="addCorrectionBtn">เพิ่มคำแก้</button>
+          </div>
+          <div class="dictionary-list" id="dictionaryList"></div>
+        </div>
+      </section>
+    </main>
+
+    <template id="emptyStateTemplate">
+      <div class="empty-state">
+        <h3>ยังไม่มีรายการนัด</h3>
+        <p>เพิ่มนัดแรกทางซ้าย หรือวางข้อความจากใบนัดเพื่อช่วยกรอกอัตโนมัติ</p>
+      </div>
+    </template>
+
+    <div class="image-modal" id="imageModal" hidden>
+      <div class="image-modal-bar">
+        <strong>รูปใบนัด</strong>
+        <button class="secondary-button" type="button" id="closeImageModalBtn">ปิด</button>
+      </div>
+      <img id="modalImage" alt="รูปใบนัดขนาดใหญ่" />
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
