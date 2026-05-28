@@ -1229,7 +1229,16 @@ async function pullFromGoogleSheet() {
   syncStatus.textContent = "กำลังโหลด";
   try {
     const data = await jsonp(`${url}?action=list`);
-    appointments = Array.isArray(data.appointments) ? normalizeLoadedAppointments(data.appointments) : appointments;
+    const remoteAppointments = Array.isArray(data.appointments) ? normalizeLoadedAppointments(data.appointments) : null;
+    if (!remoteAppointments) {
+      updateSyncStatus();
+      return;
+    }
+    if (!remoteAppointments.length && appointments.length) {
+      syncStatus.textContent = "Google ยังว่าง ไม่ทับข้อมูลเดิม";
+      return;
+    }
+    appointments = remoteAppointments;
     persist();
     render();
     syncStatus.textContent = "โหลดแล้ว";
