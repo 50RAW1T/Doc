@@ -307,6 +307,7 @@ function createAppointmentCard(item) {
   card.className = "appointment-card";
 
   const details = appointmentDetails(item);
+  const imageUrl = appointmentImageUrl(item);
   const title = details.department || details.place || "นัดหมอ";
   card.innerHTML = `
     <header>
@@ -329,7 +330,7 @@ function createAppointmentCard(item) {
     </dl>
     ${taskList(item.tasks)}
     ${item.rawText ? `<details class="raw-ocr"><summary>ข้อความ OCR ทั้งหมด</summary><pre>${escapeHtml(item.rawText)}</pre></details>` : ""}
-    ${item.imageData ? `<button class="appointment-image" data-action="view-image" type="button"><img src="${escapeHtml(item.imageData)}" alt="รูปใบนัดที่อัปโหลด" loading="lazy" /><span>กดดูรูปใหญ่</span></button>` : ""}
+    ${imageUrl ? `<button class="appointment-image" data-action="view-image" type="button"><img src="${escapeHtml(imageUrl)}" alt="รูปใบนัดที่อัปโหลด" loading="lazy" /><span>กดดูรูปใหญ่</span></button>` : ""}
     ${googleSyncInfo(item)}
     <div class="card-actions">
       <button class="secondary-button" data-action="calendar" type="button">ส่ง Calendar</button>
@@ -343,7 +344,7 @@ function createAppointmentCard(item) {
   card.querySelector('[data-action="done"]').addEventListener("click", () => updateStatus(item.id, "done"));
   card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteAppointment(item.id));
   card.querySelector('[data-action="calendar"]').addEventListener("click", () => syncAppointmentToGoogle(item.id));
-  card.querySelector('[data-action="view-image"]')?.addEventListener("click", () => openImageModal(item.imageData));
+  card.querySelector('[data-action="view-image"]')?.addEventListener("click", () => openImageModal(imageUrl, item.imageData));
   return card;
 }
 
@@ -355,8 +356,24 @@ function googleSyncInfo(item) {
   return `<p class="google-sync-info">${parts.map(escapeHtml).join(" | ")}</p>`;
 }
 
-function openImageModal(imageData) {
-  modalImage.src = imageData;
+function appointmentImageUrl(item) {
+  const imageData = item.imageData || "";
+  if (!imageData) return "";
+  const fileId = item.imageFileId || driveFileIdFromUrl(imageData);
+  if (fileId) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w1200`;
+  return imageData;
+}
+
+function driveFileIdFromUrl(value) {
+  const text = String(value || "");
+  const fileMatch = text.match(/\/file\/d\/([^/]+)/);
+  if (fileMatch) return fileMatch[1];
+  const idMatch = text.match(/[?&]id=([^&]+)/);
+  return idMatch ? idMatch[1] : "";
+}
+
+function openImageModal(imageUrl, originalUrl = "") {
+  modalImage.src = imageUrl || originalUrl;
   imageModal.hidden = false;
   document.body.classList.add("modal-open");
 }
