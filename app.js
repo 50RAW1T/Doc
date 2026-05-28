@@ -1,6 +1,8 @@
 const STORAGE_KEY = "doctor-appointments";
 const SCRIPT_URL_KEY = "doctor-appointments-script-url";
 const OCR_DICTIONARY_KEY = "doctor-appointments-ocr-dictionary";
+const DEFAULT_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycby5xzek5jLp2YA8d8rng5zObqMnJ28-M597XdliSXeBQRO7DCQ2r73Vk8fXSX2jjGj2ZA/exec";
 
 const statusLabels = {
   pending: "รอนัด",
@@ -50,7 +52,8 @@ const wrongWordInput = document.querySelector("#wrongWordInput");
 const correctWordInput = document.querySelector("#correctWordInput");
 const dictionaryList = document.querySelector("#dictionaryList");
 
-scriptUrlInput.value = localStorage.getItem(SCRIPT_URL_KEY) || "";
+scriptUrlInput.value = localStorage.getItem(SCRIPT_URL_KEY) || DEFAULT_SCRIPT_URL;
+localStorage.setItem(SCRIPT_URL_KEY, scriptUrlInput.value);
 appointments = normalizeLoadedAppointments(appointments);
 persist();
 setDefaultDate();
