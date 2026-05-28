@@ -2,6 +2,7 @@ const STORAGE_KEY = "doctor-appointments";
 const SCRIPT_URL_KEY = "doctor-appointments-script-url";
 const OCR_DICTIONARY_KEY = "doctor-appointments-ocr-dictionary";
 const GOOGLE_MIGRATION_KEY = "doctor-appointments-google-migrated-url";
+const AUTO_REFRESH_MS = 30000;
 const DEFAULT_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycby5xzek5jLp2YA8d8rng5zObqMnJ28-M597XdliSXeBQRO7DCQ2r73Vk8fXSX2jjGj2ZA/exec";
 
@@ -17,6 +18,7 @@ let editingId = null;
 let pendingImageData = "";
 let calendarCursor = new Date();
 let ocrDictionary = loadOcrDictionary();
+let isPullingFromGoogle = false;
 
 const form = document.querySelector("#appointmentForm");
 const fields = {
@@ -61,6 +63,7 @@ setDefaultDate();
 renderDictionary();
 render();
 bootstrapGoogleSync();
+startGoogleAutoRefresh();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -132,6 +135,10 @@ document.querySelector("#closeImageModalBtn").addEventListener("click", closeIma
 document.querySelector("#addCorrectionBtn").addEventListener("click", addCorrectionFromInputs);
 imageModal.addEventListener("click", (event) => {
   if (event.target === imageModal) closeImageModal();
+});
+window.addEventListener("focus", () => pullFromGoogleSheet({ silent: true }));
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) pullFromGoogleSheet({ silent: true });
 });
 
 function getFormData() {
@@ -1202,6 +1209,12 @@ async function bootstrapGoogleSync() {
   await pullFromGoogleSheet();
 }
 
+function startGoogleAutoRefresh() {
+  window.setInterval(() => {
+    pullFromGoogleSheet({ silent: true });
+  }, AUTO_REFRESH_MS);
+}
+
 async function syncAppointmentToGoogle(id) {
   const url = localStorage.getItem(SCRIPT_URL_KEY);
   if (!url) {
@@ -1246,14 +1259,17 @@ function postToAppsScript(url, payload) {
   });
 }
 
-async function pullFromGoogleSheet() {
+async function pullFromGoogleSheet(options = {}) {
+  if (isPullingFromGoogle) return;
   const url = localStorage.getItem(SCRIPT_URL_KEY);
   if (!url) {
     updateSyncStatus();
     return;
   }
+  if (options.silent && (document.hidden || editingId)) return;
 
-  syncStatus.textContent = "กำลังโหลด";
+  isPullingFromGoogle = true;
+  if (!options.silent) syncStatus.textContent = "กำลังโหลด";
   try {
     const data = await jsonp(`${url}?action=list`);
     const remoteAppointments = Array.isArray(data.appointments) ? normalizeLoadedAppointments(data.appointments) : null;
@@ -1262,15 +1278,17 @@ async function pullFromGoogleSheet() {
       return;
     }
     if (!remoteAppointments.length && appointments.length) {
-      syncStatus.textContent = "Google ยังว่าง ไม่ทับข้อมูลเดิม";
+      if (!options.silent) syncStatus.textContent = "Google ยังว่าง ไม่ทับข้อมูลเดิม";
       return;
     }
     appointments = remoteAppointments;
     persist();
     render();
-    syncStatus.textContent = "โหลดแล้ว";
+    syncStatus.textContent = options.silent ? "อัปเดตจาก Google แล้ว" : "โหลดแล้ว";
   } catch (error) {
-    syncStatus.textContent = "โหลดไม่สำเร็จ";
+    if (!options.silent) syncStatus.textContent = "โหลดไม่สำเร็จ";
+  } finally {
+    isPullingFromGoogle = false;
   }
 }
 
