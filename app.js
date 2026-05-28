@@ -60,7 +60,7 @@ persist();
 setDefaultDate();
 renderDictionary();
 render();
-migrateExistingLocalDataToGoogle();
+bootstrapGoogleSync();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1175,6 +1175,16 @@ async function migrateExistingLocalDataToGoogle() {
   }
 }
 
+async function bootstrapGoogleSync() {
+  const url = localStorage.getItem(SCRIPT_URL_KEY);
+  if (!url) return;
+  if (appointments.length) {
+    await migrateExistingLocalDataToGoogle();
+    return;
+  }
+  await pullFromGoogleSheet();
+}
+
 async function syncAppointmentToGoogle(id) {
   const url = localStorage.getItem(SCRIPT_URL_KEY);
   if (!url) {
@@ -1347,6 +1357,10 @@ function normalizeLoadedAppointments(items) {
     if (isBadGeneratedContactAppointment(item, rawText)) {
       return;
     }
+    if ((item.calendarEventId || item.imageFileId) && item.date) {
+      normalized.push(cleanStoredAppointment(item));
+      return;
+    }
     const looksLikeRawOcr =
       rawText.length > 140 &&
       /(นัดหมาย|วันที่นัดตรวจ|ทำบัตร|รายการตรวจ|คลินิก\s*:|ติดต่อสอบถาม|QRCODE|SCAN ME)/i.test(rawText);
@@ -1365,8 +1379,8 @@ function normalizeLoadedAppointments(items) {
       normalized.push({
         ...item,
         id: index === 0 ? item.id : crypto.randomUUID(),
-        date: parsed.date || item.date,
-        time: parsed.time || item.time,
+        date: normalizeAppointmentDate(parsed.date || item.date),
+        time: normalizeAppointmentTime(parsed.time || item.time),
         place: parsed.place || item.place,
         department: parsed.department || item.department,
         doctor: parsed.doctor || item.doctor,
@@ -1392,12 +1406,50 @@ function cleanStoredAppointment(item) {
   return {
     ...item,
     tasks: normalizeTaskList(item.tasks),
+    date: normalizeAppointmentDate(item.date),
+    time: normalizeAppointmentTime(item.time),
     place: isNoisyOcrBlob(item.place || "") ? details.place || "โรงพยาบาล" : item.place,
     department: isNoisyOcrBlob(item.department || "") ? details.department || "นัดหมาย" : item.department,
     doctor: isNoisyOcrBlob(item.doctor || "") ? details.doctor || "" : item.doctor,
     note: noteSummary || (isNoisyOcrBlob(item.note || "") ? "" : item.note),
     rawText: item.rawText || (isNoisyOcrBlob(rawText) ? rawText : ""),
   };
+}
+
+function normalizeAppointmentDate(value) {
+  const text = unwrapSheetValue(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) return toDateKey(date);
+  }
+  return text;
+}
+
+function normalizeAppointmentTime(value) {
+  const text = unwrapSheetValue(value);
+  const timeMatch = text.match(/^(\d{1,2}):(\d{2})/);
+  if (timeMatch) return `${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}`;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) {
+    const date = new Date(text);
+    if (!Number.isNaN(date.getTime())) {
+      return new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Bangkok",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(date);
+    }
+  }
+  return text;
+}
+
+function unwrapSheetValue(value) {
+  const text = String(value || "").trim();
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    return text.slice(1, -1).trim();
+  }
+  return text;
 }
 
 function normalizeTaskList(tasks) {
