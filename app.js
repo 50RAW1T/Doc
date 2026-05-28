@@ -19,6 +19,7 @@ let pendingImageData = "";
 let calendarCursor = new Date();
 let ocrDictionary = loadOcrDictionary();
 let isPullingFromGoogle = false;
+let lastLocalChangeAt = 0;
 
 const form = document.querySelector("#appointmentForm");
 const fields = {
@@ -69,24 +70,29 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const item = getFormData();
   learnCorrectionsFromForm(item);
+  let savedAppointment = null;
 
   if (editingId) {
     appointments = appointments.map((appointment) =>
-      appointment.id === editingId ? { ...appointment, ...item, updatedAt: new Date().toISOString() } : appointment
+      appointment.id === editingId
+        ? (savedAppointment = { ...appointment, ...item, updatedAt: new Date().toISOString() })
+        : appointment
     );
   } else {
-    appointments.push({
+    savedAppointment = {
       id: crypto.randomUUID(),
       ...item,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    };
+    appointments.push(savedAppointment);
   }
 
+  lastLocalChangeAt = Date.now();
   persist();
   resetForm();
   render();
-  await pushToGoogleSheet();
+  await syncAppointmentRecordToGoogle(savedAppointment, { silent: true });
 });
 
 document.querySelector("#clearFormBtn").addEventListener("click", resetForm);
@@ -453,10 +459,14 @@ function editAppointment(id) {
 }
 
 async function updateStatus(id, status) {
-  appointments = appointments.map((item) => (item.id === id ? { ...item, status, updatedAt: new Date().toISOString() } : item));
+  let changedAppointment = null;
+  appointments = appointments.map((item) =>
+    item.id === id ? (changedAppointment = { ...item, status, updatedAt: new Date().toISOString() }) : item
+  );
+  lastLocalChangeAt = Date.now();
   persist();
   render();
-  await pushToGoogleSheet();
+  await syncAppointmentRecordToGoogle(changedAppointment, { silent: true });
 }
 
 async function deleteAppointment(id) {
@@ -1226,12 +1236,20 @@ async function syncAppointmentToGoogle(id) {
 
   syncStatus.textContent = "กำลังส่ง Calendar/Drive";
   try {
-    await postToAppsScript(url, { action: "syncOne", appointment });
-    await pullFromGoogleSheet();
+    await syncAppointmentRecordToGoogle(appointment, { silent: true });
     syncStatus.textContent = "ส่ง Calendar/Drive แล้ว";
   } catch (error) {
     syncStatus.textContent = "ส่ง Calendar/Drive ไม่สำเร็จ";
   }
+}
+
+async function syncAppointmentRecordToGoogle(appointment, options = {}) {
+  const url = localStorage.getItem(SCRIPT_URL_KEY);
+  if (!url || !appointment) return;
+  lastLocalChangeAt = Date.now();
+  if (!options.silent) syncStatus.textContent = "กำลังซิงก์";
+  await postToAppsScript(url, { action: "syncOne", appointment });
+  syncStatus.textContent = options.silent ? "บันทึกขึ้น Google แล้ว" : "ซิงก์แล้ว";
 }
 
 async function syncAllAppointmentsToGoogle() {
@@ -1266,6 +1284,7 @@ async function pullFromGoogleSheet(options = {}) {
     updateSyncStatus();
     return;
   }
+  if (Date.now() - lastLocalChangeAt < 10000) return;
   if (options.silent && (document.hidden || editingId)) return;
 
   isPullingFromGoogle = true;
