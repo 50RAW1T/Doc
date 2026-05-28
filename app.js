@@ -1,6 +1,7 @@
 const STORAGE_KEY = "doctor-appointments";
 const SCRIPT_URL_KEY = "doctor-appointments-script-url";
 const OCR_DICTIONARY_KEY = "doctor-appointments-ocr-dictionary";
+const GOOGLE_MIGRATION_KEY = "doctor-appointments-google-migrated-url";
 const DEFAULT_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycby5xzek5jLp2YA8d8rng5zObqMnJ28-M597XdliSXeBQRO7DCQ2r73Vk8fXSX2jjGj2ZA/exec";
 
@@ -59,6 +60,7 @@ persist();
 setDefaultDate();
 renderDictionary();
 render();
+migrateExistingLocalDataToGoogle();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1154,6 +1156,22 @@ async function pushToGoogleSheet() {
     syncStatus.textContent = "ซิงก์แล้ว";
   } catch (error) {
     syncStatus.textContent = "ซิงก์ไม่สำเร็จ";
+  }
+}
+
+async function migrateExistingLocalDataToGoogle() {
+  const url = localStorage.getItem(SCRIPT_URL_KEY);
+  if (!url || !appointments.length) return;
+  if (localStorage.getItem(GOOGLE_MIGRATION_KEY) === url) return;
+
+  syncStatus.textContent = "กำลังย้ายข้อมูลเก่า";
+  try {
+    await postToAppsScript(url, { action: "syncAll", appointments });
+    localStorage.setItem(GOOGLE_MIGRATION_KEY, url);
+    await pullFromGoogleSheet();
+    syncStatus.textContent = "ย้ายข้อมูลเก่าแล้ว";
+  } catch (error) {
+    syncStatus.textContent = "ย้ายข้อมูลเก่าไม่สำเร็จ";
   }
 }
 
