@@ -1300,9 +1300,15 @@ async function pullFromGoogleSheet(options = {}) {
       if (!options.silent) syncStatus.textContent = "Google ยังว่าง ไม่ทับข้อมูลเดิม";
       return;
     }
-    appointments = remoteAppointments;
+    const localAppointments = appointments;
+    const remoteIds = new Set(remoteAppointments.map((item) => item.id).filter(Boolean));
+    const localOnlyAppointments = localAppointments.filter((item) => item.id && !remoteIds.has(item.id));
+    appointments = mergeAppointmentLists(localAppointments, remoteAppointments);
     persist();
     render();
+    for (const appointment of localOnlyAppointments) {
+      await syncAppointmentRecordToGoogle(appointment, { silent: true });
+    }
     syncStatus.textContent = options.silent ? "อัปเดตจาก Google แล้ว" : "โหลดแล้ว";
   } catch (error) {
     if (!options.silent) syncStatus.textContent = "โหลดไม่สำเร็จ";
@@ -1534,6 +1540,38 @@ function dedupeAppointments(items) {
     seen.add(key);
     return true;
   });
+}
+
+function mergeAppointmentLists(localItems, remoteItems) {
+  const byId = new Map();
+  [...remoteItems, ...localItems].forEach((item) => {
+    if (!item || !item.id) return;
+    const existing = byId.get(item.id);
+    if (!existing) {
+      byId.set(item.id, item);
+      return;
+    }
+    const newer = isNewerAppointment(item, existing) ? item : existing;
+    const older = newer === item ? existing : item;
+    byId.set(item.id, {
+      ...older,
+      ...newer,
+      imageData: newer.imageData || older.imageData || "",
+      imageFileId: newer.imageFileId || older.imageFileId || "",
+      calendarEventId: newer.calendarEventId || older.calendarEventId || "",
+      calendarHtmlLink: newer.calendarHtmlLink || older.calendarHtmlLink || "",
+      tasks: newer.tasks?.length ? newer.tasks : older.tasks || [],
+    });
+  });
+  return mergeAppointmentsFromSameDocument(dedupeAppointments([...byId.values()]));
+}
+
+function isNewerAppointment(candidate, current) {
+  const candidateTime = Date.parse(candidate.updatedAt || candidate.createdAt || "");
+  const currentTime = Date.parse(current.updatedAt || current.createdAt || "");
+  if (Number.isNaN(candidateTime)) return false;
+  if (Number.isNaN(currentTime)) return true;
+  return candidateTime >= currentTime;
 }
 
 function mergeAppointmentsFromSameDocument(items) {
