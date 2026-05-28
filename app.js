@@ -1557,7 +1557,7 @@ function isBadGeneratedContactAppointment(item, rawText) {
 function dedupeAppointments(items) {
   const seen = new Set();
   return items.filter((item) => {
-    const key = [item.date, item.time, item.place, item.department, item.note].join("|");
+    const key = item.id || [item.date, item.time, item.place, item.department, item.note].join("|");
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -1597,6 +1597,10 @@ function isNewerAppointment(candidate, current) {
 }
 
 function mergeAppointmentsFromSameDocument(items) {
+  return [...items].sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`));
+}
+
+function mergeAppointmentsFromSameDocumentLegacy(items) {
   const groups = new Map();
   const loose = [];
   items.forEach((item) => {
