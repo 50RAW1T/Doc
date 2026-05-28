@@ -3,6 +3,7 @@ const SCRIPT_URL_KEY = "doctor-appointments-script-url";
 const OCR_DICTIONARY_KEY = "doctor-appointments-ocr-dictionary";
 const GOOGLE_MIGRATION_KEY = "doctor-appointments-google-migrated-url";
 const AUTO_REFRESH_MS = 30000;
+const DELETE_MARKER = "__doctor_appointment_deleted__";
 const DEFAULT_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycby5xzek5jLp2YA8d8rng5zObqMnJ28-M597XdliSXeBQRO7DCQ2r73Vk8fXSX2jjGj2ZA/exec";
 
@@ -191,20 +192,29 @@ function render() {
   updateDateHint();
 }
 
+function activeAppointments() {
+  return appointments.filter((item) => !isDeletedAppointment(item));
+}
+
+function isDeletedAppointment(item) {
+  return Boolean(item?.deletedAt || String(item?.note || "").includes(DELETE_MARKER));
+}
+
 function renderStats() {
+  const active = activeAppointments();
   const now = startOfDay(new Date());
   const nextSevenDays = new Date(now);
   nextSevenDays.setDate(now.getDate() + 7);
 
-  document.querySelector("#totalCount").textContent = appointments.length;
-  document.querySelector("#pendingCount").textContent = appointments.filter((item) => item.status === "pending").length;
-  document.querySelector("#doneCount").textContent = appointments.filter((item) => item.status === "done").length;
-  document.querySelector("#soonCount").textContent = appointments.filter((item) => {
+  document.querySelector("#totalCount").textContent = active.length;
+  document.querySelector("#pendingCount").textContent = active.filter((item) => item.status === "pending").length;
+  document.querySelector("#doneCount").textContent = active.filter((item) => item.status === "done").length;
+  document.querySelector("#soonCount").textContent = active.filter((item) => {
     const date = dateFromInput(item.date);
     return item.status === "pending" && date >= now && date <= nextSevenDays;
   }).length;
 
-  const next = appointments.find((item) => item.status === "pending" && dateFromInput(item.date) >= now);
+  const next = active.find((item) => item.status === "pending" && dateFromInput(item.date) >= now);
   document.querySelector("#nextAppointment").textContent = next
     ? `นัดถัดไป: ${formatDate(next.date)} ${next.time} ที่ ${next.place}`
     : "ยังไม่มีนัดถัดไป";
@@ -213,7 +223,7 @@ function renderStats() {
 function renderList() {
   const query = searchInput.value.trim().toLowerCase();
   const status = filterInput.value;
-  const filtered = appointments.filter((item) => {
+  const filtered = activeAppointments().filter((item) => {
     const haystack = [item.place, item.department, item.doctor, item.note, item.date, item.time].join(" ").toLowerCase();
     return (!query || haystack.includes(query)) && (status === "all" || item.status === status);
   });
@@ -254,7 +264,7 @@ function renderCalendar() {
   const startOffset = (firstDay.getDay() + 6) % 7;
   const gridStart = new Date(year, month, 1 - startOffset);
   const todayKey = toDateKey(new Date());
-  const byDate = appointments.reduce((map, item) => {
+  const byDate = activeAppointments().reduce((map, item) => {
     if (!item.date) return map;
     if (!map.has(item.date)) map.set(item.date, []);
     map.get(item.date).push(item);
@@ -471,10 +481,22 @@ async function updateStatus(id, status) {
 
 async function deleteAppointment(id) {
   if (!confirm("ลบนัดนี้ออกจากรายการ?")) return;
-  appointments = appointments.filter((item) => item.id !== id);
+  let deletedAppointment = null;
+  appointments = appointments.map((item) => {
+    if (item.id !== id) return item;
+    deletedAppointment = {
+      ...item,
+      status: "cancelled",
+      note: [item.note, DELETE_MARKER].filter(Boolean).join("\n"),
+      deletedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return deletedAppointment;
+  });
+  lastLocalChangeAt = Date.now();
   persist();
   render();
-  await pushToGoogleSheet();
+  await syncAppointmentRecordToGoogle(deletedAppointment, { silent: true });
 }
 
 function parseAppointmentText(text) {
@@ -1062,7 +1084,7 @@ async function saveParsedAppointments(parsedItems, imageData = "") {
   persist();
   resetForm();
   render();
-  await pushToGoogleSheet();
+  await syncAppointmentRecordToGoogle(newAppointment, { silent: true });
   return 1;
 }
 
